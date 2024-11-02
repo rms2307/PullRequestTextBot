@@ -1,5 +1,5 @@
-﻿using PullRequestTextBot.Dtos;
-using System;
+﻿using Microsoft.Extensions.Configuration;
+using PullRequestTextBot.Dtos;
 using System.Text;
 using System.Text.Json;
 
@@ -7,64 +7,87 @@ namespace PullRequestTextBot
 {
     public class IAService
     {
-        public async Task<string> GenerateTextPullRequest(string diffs)
+        public async Task<string> GenerateTextPullRequest(string diffs, IConfigurationRoot configuration)
         {
-            StringBuilder promptStringBuilder = GeneratePrompt(diffs);
+            StringBuilder promptSystem = GeneratePromptSystem();
+            StringBuilder prompt = GeneratePrompt(diffs);
 
             var body = new
             {
-                model = "llama3.1",
-                prompt = promptStringBuilder.ToString(),
+                system_instruction = new
+                {
+                    parts = new
+                    {
+                        text = promptSystem.ToString(),
+                    }
+                },
+                contents = new
+                {
+                    role = "user",
+                    parts = new
+                    {
+                        text = prompt.ToString(),
+                    }
+                },
+                generationConfig = new
+                {
+                    responseMimeType = "text/plain",
+                }
             };
 
+            string model = configuration["Model"]!;
+            string apiKey = configuration["ApiKey"]!;
+
+            string apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
             string jsonBody = JsonSerializer.Serialize(body);
+
             StringContent content = new(jsonBody, Encoding.UTF8, "application/json");
 
-            string apiUrl = "http://localhost:11434/api/generate";
-            HttpRequestMessage request = new(HttpMethod.Post, apiUrl)
+            using HttpClient client = new();
+
+            using HttpResponseMessage response = await client.PostAsync(apiUrl, content);
+
+            if (!response.IsSuccessStatusCode)
             {
-                Content = content
-            };
-
-            using (HttpClient client = new())
-            {
-                client.Timeout = TimeSpan.FromMinutes(10);
-
-                using HttpResponseMessage response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-                response.EnsureSuccessStatusCode();
-
-                using Stream stream = await response.Content.ReadAsStreamAsync();
-                using StreamReader reader = new(stream);
-                string? line;
-                while ((line = await reader.ReadLineAsync()) != null)
-                {
-                    IAResponse? jsonObject = JsonSerializer.Deserialize<IAResponse>(line);
-                    Console.Write($"{jsonObject.Response}");
-                }
+                var error = JsonSerializer.Deserialize<object>(await response.Content.ReadAsStringAsync());
             }
 
-            return promptStringBuilder.ToString();
+            IAResponse? iaResponse = JsonSerializer.Deserialize<IAResponse>(await response.Content.ReadAsStringAsync());
+
+            if (iaResponse == null)
+            {
+                return string.Empty;
+            }
+
+            return iaResponse.Candidates[0].Content.Parts[0].Text;
+        }
+
+        private static StringBuilder GeneratePromptSystem()
+        {
+            StringBuilder promptStringBuilder = new();
+            promptStringBuilder.AppendLine("Você é um assistente especializado em análise de código e controle de versão. A partir de um diff gerado pela comparação entre duas branches de um repositório Git, sua tarefa é gerar um resumo detalhado e organizado das mudanças encontradas.");
+            promptStringBuilder.AppendLine("Instruções:");
+            promptStringBuilder.AppendLine("- Analise o diff fornecido que contém as diferenças entre dois branches.");
+            promptStringBuilder.AppendLine("- Para cada arquivo mencionado no diff, gere um resumo explicando as principais mudanças realizadas.");
+            promptStringBuilder.AppendLine("- O resumo deve incluir o nome do arquivo seguido de uma explicação das alterações, destacando mudanças importantes como adições, remoções, modificações de código, alterações de lógica, refatorações, melhorias de performance, e qualquer outro detalhe relevante.");
+            promptStringBuilder.AppendLine("- Organize a explicação em uma lista, separando cada arquivo com seu respectivo resumo.");
+            promptStringBuilder.AppendLine("- Use uma linguagem clara e concisa, adequada para desenvolvedores e pessoas técnicas que revisam código.");
+            promptStringBuilder.AppendLine("Exemplo de Saída Esperada:");
+            promptStringBuilder.AppendLine("- src/main/app.js: Adiciona novas funções de validação de entrada para melhorar a segurança dos dados de entrada. Refatora a lógica de processamento de eventos para reduzir a complexidade ciclomática.");
+            promptStringBuilder.AppendLine("- src/components/Header.jsx: Muda a estrutura do componente para ser uma função pura. Remove o uso de estado local desnecessário e uso de hooks do React para melhorar a reutilização de código.");
+            promptStringBuilder.AppendLine("GERAR TUDO EM CÓDIGO MARKDOWN PARA SER COPIADO E COLADO NO GITHUB/GITLAB");
+
+            return promptStringBuilder;
         }
 
         private static StringBuilder GeneratePrompt(string diffs)
         {
             StringBuilder promptStringBuilder = new();
-            promptStringBuilder.AppendLine("A partir das mudanças informadas abaixo (output do comando diff do Git) escrever um texto explicando essas mudanças, seguindo as instruções abaixo.");
-            promptStringBuilder.AppendLine("Instruções:");
-            promptStringBuilder.AppendLine("- Destacar as mudanças de cada arquivo, em forma de lista.");
-            promptStringBuilder.AppendLine("- Usar apenas o nome do arquivo, e não o caminho completo do arquivo.");
-            promptStringBuilder.AppendLine("- Usar hifens (-) como marcadores da listagem de arquivos alterados.");
-            promptStringBuilder.AppendLine("- A lista de alterações deve seguir o modelo abaixo:");
-            promptStringBuilder.AppendLine("  Modelo:");
-            promptStringBuilder.AppendLine("  NomeDoArquivoAlterado");
-            promptStringBuilder.AppendLine("  - Alteração um");
-            promptStringBuilder.AppendLine("  - Alteração dois");
-            promptStringBuilder.AppendLine("  - Alteração três");
-            promptStringBuilder.AppendLine("- Não escreva nada a mais além das mudanças de cada arquivo.");
-            promptStringBuilder.AppendLine("- GERAR TUDO EM CÓDIGO MARKDOWN PARA SER COPIADO E COLADO NO GITHUB/GITLAB");
-
+            promptStringBuilder.AppendLine("Gere um resumo detalhado e organizado das mudanças abaixo:");
+            promptStringBuilder.AppendLine("");
             promptStringBuilder.AppendLine("DIFFS:");
             promptStringBuilder.AppendLine(diffs);
+
             return promptStringBuilder;
         }
     }

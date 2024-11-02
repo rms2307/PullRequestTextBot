@@ -2,12 +2,27 @@
 
 namespace PullRequestTextBot.Dtos
 {
-    public record IAResponse
+    public class IAResponse
     {
-        [JsonPropertyName("response")]
-        public string Response { get; set; } = string.Empty;
+        [JsonPropertyName("candidates")]
+        public List<Candidate> Candidates { get; set; } = [];
+    }
 
-        [JsonPropertyName("done")]
-        public bool Done { get; set; }
+    public class Candidate
+    {
+        [JsonPropertyName("content")]
+        public Content Content { get; set; } = new();
+    }
+
+    public class Content
+    {
+        [JsonPropertyName("parts")]
+        public List<Part> Parts { get; set; } = [];
+    }
+
+    public class Part
+    {
+        [JsonPropertyName("text")]
+        public string Text { get; set; } = string.Empty;
     }
 }
