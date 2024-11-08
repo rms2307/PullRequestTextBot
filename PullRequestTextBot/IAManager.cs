@@ -1,13 +1,12 @@
-﻿using Microsoft.Extensions.Configuration;
-using PullRequestTextBot.Dtos;
+﻿using PullRequestTextBot.Dtos;
 using System.Text;
 using System.Text.Json;
 
 namespace PullRequestTextBot
 {
-    public class IAService
+    public static class IAManager
     {
-        public async Task<string> GenerateTextPullRequest(string diffs, IConfigurationRoot configuration)
+        public static async Task<string> GenerateTextPullRequest(string diffs, string apiKey)
         {
             StringBuilder promptSystem = GeneratePromptSystem();
             StringBuilder prompt = GeneratePrompt(diffs);
@@ -35,31 +34,27 @@ namespace PullRequestTextBot
                 }
             };
 
-            string model = configuration["Model"]!;
-            string apiKey = configuration["ApiKey"]!;
-
-            string apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
+            string apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}";
             string jsonBody = JsonSerializer.Serialize(body);
 
             StringContent content = new(jsonBody, Encoding.UTF8, "application/json");
 
             using HttpClient client = new();
-
             using HttpResponseMessage response = await client.PostAsync(apiUrl, content);
 
             if (!response.IsSuccessStatusCode)
-            {
+            {// TODO: Melhorar tratamento de erros
                 var error = JsonSerializer.Deserialize<object>(await response.Content.ReadAsStringAsync());
             }
 
             IAResponse? iaResponse = JsonSerializer.Deserialize<IAResponse>(await response.Content.ReadAsStringAsync());
 
             if (iaResponse == null)
-            {
+            {// TODO: Melhorar tratamento de erros
                 return string.Empty;
             }
 
-            return iaResponse.Candidates[0].Content.Parts[0].Text;
+            return iaResponse.Candidates[0].Content.Parts[0].Text; // TODO: Melhorar retorno da resposta
         }
 
         private static StringBuilder GeneratePromptSystem()

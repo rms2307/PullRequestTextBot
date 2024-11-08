@@ -2,9 +2,9 @@
 
 namespace PullRequestTextBot
 {
-    public class GitService
+    public static class GitManager
     {
-        public string ExecuteGitCommandDiff(string source, string destination)
+        public static string ExecuteGitCommandDiff(string source, string destination)
         {
             Process process = new();
             process.StartInfo.FileName = "git";
